@@ -127,8 +127,8 @@ async function main() {
     password = await askSecret("Password");
     if (!password) {
       console.log(`    ${theme.warning}Password cannot be empty.${theme.reset}`);
-    } else if (password.length < 6) {
-      console.log(`    ${theme.warning}Password must be at least 6 characters.${theme.reset}`);
+    } else if (password.length < 8) {
+      console.log(`    ${theme.warning}Password must be at least 8 characters.${theme.reset}`);
       password = "";
     }
   }

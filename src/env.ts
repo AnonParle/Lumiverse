@@ -55,6 +55,10 @@ export function loadEnv(): EnvConfig {
     console.error("OWNER_PASSWORD is required. Set it in your .env file.");
     process.exit(1);
   }
+  if (ownerPassword.length < 8) {
+    console.error("OWNER_PASSWORD must be at least 8 characters.");
+    process.exit(1);
+  }
 
   // AUTH_SECRET is optional — if not set, it will be derived from the identity
   // key during initIdentity(). An explicit value takes precedence.

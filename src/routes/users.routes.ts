@@ -19,6 +19,10 @@ app.post("/me/password", async (c) => {
     return c.json({ error: "currentPassword and newPassword are required" }, 400);
   }
 
+  if (body.newPassword.length < 8) {
+    return c.json({ error: "Password must be at least 8 characters" }, 400);
+  }
+
   const account = getDb()
     .query('SELECT password FROM account WHERE userId = ? AND providerId = ?')
     .get(session.user.id, "credential") as { password: string } | null;
@@ -70,7 +74,7 @@ admin.post("/", async (c) => {
     return c.json({ error: "username and password are required" }, 400);
   }
 
-  const nonce = allowCreation();
+  allowCreation();
 
   try {
     const newUser = await auth.api.signUpEmail({
@@ -79,7 +83,6 @@ admin.post("/", async (c) => {
         password: body.password,
         name: body.name || body.username,
         username: body.username,
-        __creationNonce: nonce,
       },
     });
 
@@ -100,6 +103,10 @@ admin.post("/:id/reset-password", async (c) => {
 
   if (!body.newPassword) {
     return c.json({ error: "newPassword is required" }, 400);
+  }
+
+  if (body.newPassword.length < 8) {
+    return c.json({ error: "Password must be at least 8 characters" }, 400);
   }
 
   const hashed = await hashPassword(body.newPassword);

@@ -17,13 +17,12 @@ export function allowCreation(): string {
   return creationNonce;
 }
 
-function consumeNonce(nonce: string | undefined): boolean {
-  if (!creationNonce || !nonce) return false;
+function consumeNonce(): boolean {
+  if (!creationNonce) return false;
   if (Date.now() > creationNonceExpiry) {
     creationNonce = null;
     return false;
   }
-  if (nonce !== creationNonce) return false;
   creationNonce = null; // single use
   return true;
 }
@@ -43,6 +42,8 @@ export const auth = betterAuth({
     : env.trustedOrigins,
   emailAndPassword: {
     enabled: true,
+    minPasswordLength: 8,
+    maxPasswordLength: 128,
   },
   plugins: [
     username(),
@@ -60,14 +61,10 @@ export const auth = betterAuth({
   databaseHooks: {
     user: {
       create: {
-        before: async (user) => {
-          const nonce = (user as any).__creationNonce;
-          if (!consumeNonce(nonce)) {
+        before: async () => {
+          if (!consumeNonce()) {
             return false;
           }
-          // Strip the nonce so it's not persisted
-          const { __creationNonce: _, ...cleanUser } = user as any;
-          return { data: cleanUser };
         },
         after: async (user) => {
           provisionUserDirectories(user.id);
