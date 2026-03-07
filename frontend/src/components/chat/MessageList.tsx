@@ -1,0 +1,239 @@
+import { useRef, useEffect, useCallback, useMemo } from 'react'
+import { useChunkedMessages } from '@/hooks/useChunkedMessages'
+import { useStore } from '@/store'
+import { charactersApi } from '@/api/characters'
+import MessageCard from './MessageCard'
+import MessageContent from './MessageContent'
+import ReasoningBlock from './ReasoningBlock'
+import StreamingIndicator from './StreamingIndicator'
+import GroupChatProgressBar from './GroupChatProgressBar'
+import GroupChatMemberBar from './GroupChatMemberBar'
+import LazyImage from '@/components/shared/LazyImage'
+import type { Message } from '@/types/api'
+import styles from './MessageList.module.css'
+import bubbleStyles from './BubbleMessage.module.css'
+
+interface MessageListProps {
+  messages: Message[]
+  chatId: string
+  isStreaming: boolean
+}
+
+export default function MessageList({ messages, chatId, isStreaming }: MessageListProps) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const isNearBottomRef = useRef(true)
+  const rafRef = useRef<number>(0)
+  const { visibleMessages, hasMore, loadMore, loadingOlder } = useChunkedMessages(messages, chatId)
+  const streamingContent = useStore((s) => s.streamingContent)
+  const streamingReasoning = useStore((s) => s.streamingReasoning)
+  const streamingError = useStore((s) => s.streamingError)
+  const regeneratingMessageId = useStore((s) => s.regeneratingMessageId)
+  const autoParse = useStore((s) => s.reasoningSettings.autoParse)
+  const displayMode = useStore((s) => s.chatSheldDisplayMode)
+  const activePersonaId = useStore((s) => s.activePersonaId)
+  const personas = useStore((s) => s.personas)
+
+  // Auto-parse thinking tags from streaming content
+  const { streamDisplay, streamThoughts } = useMemo(() => {
+    if (!autoParse || !streamingContent) return { streamDisplay: streamingContent, streamThoughts: '' }
+    const tagPattern = /<(think|thinking|reasoning)>([\s\S]*?)<\/\1>/gi
+    let thoughts = ''
+    const cleaned = streamingContent.replace(tagPattern, (_m, _t, inner) => {
+      thoughts += (thoughts ? '\n\n' : '') + inner.trim()
+      return ''
+    }).trim()
+    return { streamDisplay: cleaned || streamingContent, streamThoughts: thoughts }
+  }, [streamingContent, autoParse])
+  const activeCharacterId = useStore((s) => s.activeCharacterId)
+  const characters = useStore((s) => s.characters)
+  const isGroupChat = useStore((s) => s.isGroupChat)
+  const activeGroupCharacterId = useStore((s) => s.activeGroupCharacterId)
+  const isNudgeLoopActive = useStore((s) => s.isNudgeLoopActive)
+
+  // For streaming, use the group's active character if in a group chat
+  const streamCharacterId = isGroupChat && activeGroupCharacterId ? activeGroupCharacterId : activeCharacterId
+  const streamCharacter = streamCharacterId ? characters.find((c) => c.id === streamCharacterId) : null
+  const activeCharacter = activeCharacterId ? characters.find((c) => c.id === activeCharacterId) : null
+  const streamDisplayName = useMemo(() => {
+    const characterName = (streamCharacter?.name || activeCharacter?.name || '').trim()
+    if (characterName) return characterName
+
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]
+      if (m.is_user) continue
+      const candidate = (m.name || '').trim()
+      if (candidate && !/^assistant$/i.test(candidate)) return candidate
+    }
+
+    return 'Assistant'
+  }, [streamCharacter?.name, activeCharacter?.name, messages])
+  const userName = personas.find((p) => p.id === activePersonaId)?.name ?? 'User'
+  const avatarUrl = streamCharacterId ? charactersApi.avatarUrl(streamCharacterId) : null
+
+  // Intersection observer for loading more
+  const sentinelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel || !hasMore) return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) loadMore()
+      },
+      { root: scrollRef.current, rootMargin: '200px' }
+    )
+
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [hasMore, loadMore])
+
+  // Track if user is near bottom
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const threshold = 150
+    isNearBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < threshold
+  }, [])
+
+  // RAF-batched auto-scroll during streaming
+  useEffect(() => {
+    if (!isNearBottomRef.current) return
+
+    cancelAnimationFrame(rafRef.current)
+    rafRef.current = requestAnimationFrame(() => {
+      const el = scrollRef.current
+      if (el) {
+        el.scrollTop = el.scrollHeight
+      }
+    })
+
+    return () => cancelAnimationFrame(rafRef.current)
+  }, [messages.length, streamingContent])
+
+  // Scroll to bottom on chat change
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el) {
+      el.scrollTop = el.scrollHeight
+    }
+  }, [chatId])
+
+  // Viewport observer — gate expensive effects (box-shadow, backdrop-filter) to visible cards.
+  // When glass is disabled, skip the observer entirely — the backdrop-filter rules won't apply
+  // via CSS (gated behind [data-glass]), and the box-shadow alone isn't expensive enough to
+  // warrant the constant attribute toggling that causes layout thrash during scroll.
+  const glassEnabled = useStore((s) => s.theme?.enableGlass ?? true)
+
+  useEffect(() => {
+    const container = scrollRef.current
+    if (!container) return
+
+    // When glass is off, mark all cards as in-viewport statically (for box-shadow)
+    // and skip the observer to avoid scroll-time DOM mutations.
+    const cards = container.querySelectorAll('[data-message-id]')
+    if (!glassEnabled) {
+      cards.forEach((card) => card.setAttribute('data-in-viewport', ''))
+      return
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            entry.target.setAttribute('data-in-viewport', '')
+          } else {
+            entry.target.removeAttribute('data-in-viewport')
+          }
+        }
+      },
+      { root: container, rootMargin: '200px' }
+    )
+
+    cards.forEach((card) => observer.observe(card))
+
+    return () => observer.disconnect()
+  }, [visibleMessages.length, glassEnabled])
+
+  return (
+    <div className={styles.list} ref={scrollRef} onScroll={handleScroll} data-chat-scroll="true">
+      {isGroupChat && <GroupChatMemberBar chatId={chatId} />}
+      {hasMore && <div ref={sentinelRef} className={styles.sentinel} />}
+      {loadingOlder && (
+        <div className={styles.loadingOlder}>Loading older messages...</div>
+      )}
+      {visibleMessages.map((message) => (
+        <MessageCard key={`${message.id}:${message.index_in_chat}`} message={message} chatId={chatId} />
+      ))}
+
+      {/* Group chat progress bar during nudge loop */}
+      {isGroupChat && isNudgeLoopActive && <GroupChatProgressBar />}
+
+      {/* Streaming message bubble — shows tokens as they arrive (only for new messages, not regeneration) */}
+      {isStreaming && !regeneratingMessageId && (streamDisplay || !streamingError) && (
+        <div className={`${bubbleStyles.card} ${bubbleStyles.character} ${bubbleStyles.streaming}`} data-in-viewport>
+          <div className={bubbleStyles.bubble}>
+            <div className={bubbleStyles.header}>
+              <div className={bubbleStyles.headerLeft}>
+                <div className={bubbleStyles.avatar}>
+                  {avatarUrl ? (
+                    <LazyImage
+                      src={avatarUrl}
+                      alt={streamDisplayName}
+                      fallback={
+                        <div className={bubbleStyles.avatarFallback}>
+                          {streamDisplayName?.[0]?.toUpperCase() || '?'}
+                        </div>
+                      }
+                    />
+                  ) : (
+                    <div className={bubbleStyles.avatarFallback}>
+                      {streamDisplayName?.[0]?.toUpperCase() || '?'}
+                    </div>
+                  )}
+                </div>
+                <div className={bubbleStyles.metaWrap}>
+                  <span className={`${bubbleStyles.name} ${bubbleStyles.nameChar}`}>
+                    {streamDisplayName}
+                  </span>
+                </div>
+              </div>
+            </div>
+            {(streamingReasoning || streamThoughts) && (
+              <ReasoningBlock
+                reasoning={streamingReasoning || streamThoughts}
+                isStreaming
+                variant="bubble"
+              />
+            )}
+            <div className={bubbleStyles.content}>
+              {streamDisplay ? (
+                <MessageContent
+                  content={streamDisplay}
+                  isUser={false}
+                  userName={userName}
+                  isStreaming
+                  chatId={chatId}
+                />
+              ) : (
+                <StreamingIndicator />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Generation error display */}
+      {streamingError && (
+        <div className={styles.errorBubble}>
+          <span className={styles.errorLabel}>Generation failed:</span> {streamingError}
+        </div>
+      )}
+
+      <div data-spindle-mount="message_footer" />
+      <div ref={bottomRef} />
+    </div>
+  )
+}

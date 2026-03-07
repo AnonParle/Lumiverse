@@ -1,0 +1,500 @@
+import { connect, type Connection, type Table } from "@lancedb/lancedb";
+import { join } from "path";
+import { env } from "../env";
+import * as settingsSvc from "./settings.service";
+import * as secretsSvc from "./secrets.service";
+import type { WorldBookEntry } from "../types/world-book";
+
+const EMBEDDING_SETTINGS_KEY = "embeddingConfig";
+const EMBEDDING_SECRET_KEY = "embedding_api_key";
+const LANCEDB_PATH = join(env.dataDir, "lancedb");
+const EMBEDDINGS_TABLE = "embeddings";
+
+export type EmbeddingProvider =
+  | "openai-compatible"
+  | "openai"
+  | "openrouter"
+  | "electronhub"
+  | "nanogpt";
+
+export interface EmbeddingConfig {
+  enabled: boolean;
+  provider: EmbeddingProvider;
+  api_url: string;
+  model: string;
+  dimensions: number | null;
+  retrieval_top_k: number;
+  hybrid_weight_mode: "keyword_first" | "balanced" | "vector_first";
+  preferred_context_size: number;
+  batch_size: number;
+  similarity_threshold: number;
+  vectorize_world_books: boolean;
+  vectorize_chat_messages: boolean;
+  vectorize_chat_documents: boolean;
+}
+
+export interface EmbeddingConfigWithStatus extends EmbeddingConfig {
+  has_api_key: boolean;
+}
+
+interface EmbeddingRow {
+  id: string;
+  user_id: string;
+  source_type: string;
+  source_id: string;
+  owner_id: string;
+  chunk_index: number;
+  content: string;
+  vector: number[];
+  metadata_json: string;
+  updated_at: number;
+}
+
+type LanceRow = Record<string, unknown>;
+
+function asLanceRows(rows: EmbeddingRow[]): LanceRow[] {
+  return rows as unknown as LanceRow[];
+}
+
+const PROVIDER_DEFAULT_URL: Record<EmbeddingProvider, string> = {
+  "openai-compatible": "https://api.openai.com/v1",
+  openai: "https://api.openai.com/v1",
+  openrouter: "https://openrouter.ai/api/v1",
+  electronhub: "https://api.electronhub.top/v1",
+  nanogpt: "https://nano-gpt.com/api/v1",
+};
+
+let connPromise: Promise<Connection> | null = null;
+let vectorIndexReady = false;
+let optimizeTimer: ReturnType<typeof setTimeout> | null = null;
+const OPTIMIZE_DEBOUNCE_MS = 30_000; // 30 seconds after last write
+
+function providerDefaultModel(provider: EmbeddingProvider): string {
+  if (provider === "nanogpt") return "text-embedding-3-small";
+  if (provider === "openrouter") return "text-embedding-3-small";
+  if (provider === "electronhub") return "text-embedding-3-small";
+  if (provider === "openai") return "text-embedding-3-small";
+  return "text-embedding-3-small";
+}
+
+function defaultConfig(provider: EmbeddingProvider = "openai-compatible"): EmbeddingConfig {
+  return {
+    enabled: false,
+    provider,
+    api_url: PROVIDER_DEFAULT_URL[provider],
+    model: providerDefaultModel(provider),
+    dimensions: null,
+    retrieval_top_k: 4,
+    hybrid_weight_mode: "balanced",
+    preferred_context_size: 6,
+    batch_size: 50,
+    similarity_threshold: 0,
+    vectorize_world_books: true,
+    vectorize_chat_messages: false,
+    vectorize_chat_documents: true,
+  };
+}
+
+function normalizeConfig(input: any): EmbeddingConfig {
+  const provider = ((input?.provider as EmbeddingProvider) || "openai-compatible");
+  const base = defaultConfig(provider);
+  return {
+    enabled: input?.enabled !== undefined ? !!input.enabled : base.enabled,
+    provider,
+    api_url: typeof input?.api_url === "string" && input.api_url.trim() ? input.api_url.trim() : base.api_url,
+    model: typeof input?.model === "string" && input.model.trim() ? input.model.trim() : base.model,
+    dimensions: Number.isFinite(input?.dimensions) && input.dimensions > 0 ? Math.floor(input.dimensions) : null,
+    retrieval_top_k:
+      Number.isFinite(input?.retrieval_top_k) && input.retrieval_top_k > 0
+        ? Math.min(24, Math.floor(input.retrieval_top_k))
+        : base.retrieval_top_k,
+    hybrid_weight_mode:
+      input?.hybrid_weight_mode === "keyword_first" ||
+      input?.hybrid_weight_mode === "balanced" ||
+      input?.hybrid_weight_mode === "vector_first"
+        ? input.hybrid_weight_mode
+        : base.hybrid_weight_mode,
+    preferred_context_size:
+      Number.isFinite(input?.preferred_context_size) && input.preferred_context_size > 0
+        ? Math.min(64, Math.floor(input.preferred_context_size))
+        : base.preferred_context_size,
+    batch_size:
+      Number.isFinite(input?.batch_size) && input.batch_size > 0
+        ? Math.min(200, Math.max(1, Math.floor(input.batch_size)))
+        : base.batch_size,
+    similarity_threshold:
+      Number.isFinite(input?.similarity_threshold) && input.similarity_threshold >= 0
+        ? Math.min(1, input.similarity_threshold)
+        : base.similarity_threshold,
+    vectorize_world_books:
+      input?.vectorize_world_books !== undefined ? !!input.vectorize_world_books : base.vectorize_world_books,
+    vectorize_chat_messages:
+      input?.vectorize_chat_messages !== undefined ? !!input.vectorize_chat_messages : base.vectorize_chat_messages,
+    vectorize_chat_documents:
+      input?.vectorize_chat_documents !== undefined ? !!input.vectorize_chat_documents : base.vectorize_chat_documents,
+  };
+}
+
+function sqlValue(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function rowId(userId: string, sourceType: string, sourceId: string, chunkIndex: number): string {
+  return `${userId}:${sourceType}:${sourceId}:${chunkIndex}`;
+}
+
+async function getConnection(): Promise<Connection> {
+  if (!connPromise) connPromise = connect(LANCEDB_PATH);
+  return connPromise;
+}
+
+async function tableExists(conn: Connection, name: string): Promise<boolean> {
+  const names = await conn.tableNames();
+  return names.includes(name);
+}
+
+async function getOrCreateTable(seedRows?: EmbeddingRow[]): Promise<Table> {
+  const conn = await getConnection();
+  const exists = await tableExists(conn, EMBEDDINGS_TABLE);
+  if (exists) {
+    return conn.openTable(EMBEDDINGS_TABLE);
+  }
+  const rows = seedRows && seedRows.length > 0 ? seedRows : [
+    {
+      id: "__seed__",
+      user_id: "__seed__",
+      source_type: "__seed__",
+      source_id: "__seed__",
+      owner_id: "__seed__",
+      chunk_index: 0,
+      content: "seed",
+      vector: [0, 0],
+      metadata_json: "{}",
+      updated_at: 0,
+    },
+  ];
+  const table = await conn.createTable(EMBEDDINGS_TABLE, asLanceRows(rows));
+  await table.delete(`id = ${sqlValue("__seed__")}`);
+  return table;
+}
+
+async function ensureVectorIndex(table: Table): Promise<void> {
+  if (vectorIndexReady) return;
+  try {
+    await table.createIndex("vector");
+  } catch {
+    // Index may already exist.
+  }
+  vectorIndexReady = true;
+}
+
+export async function optimizeTable(): Promise<void> {
+  const conn = await getConnection();
+  const exists = await tableExists(conn, EMBEDDINGS_TABLE);
+  if (!exists) return;
+
+  const table = await conn.openTable(EMBEDDINGS_TABLE);
+  await table.optimize({
+    cleanupOlderThan: new Date(),
+  });
+}
+
+function scheduleOptimize(): void {
+  if (optimizeTimer) clearTimeout(optimizeTimer);
+  optimizeTimer = setTimeout(async () => {
+    optimizeTimer = null;
+    try {
+      await optimizeTable();
+    } catch (err) {
+      console.warn("[embeddings] Deferred optimize failed:", err);
+    }
+  }, OPTIMIZE_DEBOUNCE_MS);
+}
+
+export function getProviderDefaults(provider: EmbeddingProvider) {
+  return {
+    api_url: PROVIDER_DEFAULT_URL[provider],
+    model: providerDefaultModel(provider),
+  };
+}
+
+export async function getEmbeddingConfig(userId: string): Promise<EmbeddingConfigWithStatus> {
+  const setting = settingsSvc.getSetting(userId, EMBEDDING_SETTINGS_KEY);
+  const cfg = normalizeConfig(setting?.value);
+  const has_api_key = await secretsSvc.validateSecret(userId, EMBEDDING_SECRET_KEY);
+  return { ...cfg, has_api_key };
+}
+
+export async function updateEmbeddingConfig(
+  userId: string,
+  input: Partial<EmbeddingConfig> & { api_key?: string | null }
+): Promise<EmbeddingConfigWithStatus> {
+  const current = await getEmbeddingConfig(userId);
+  const merged = normalizeConfig({ ...current, ...input });
+  settingsSvc.putSetting(userId, EMBEDDING_SETTINGS_KEY, merged);
+
+  if (input.api_key !== undefined) {
+    const next = (input.api_key || "").trim();
+    if (next) {
+      await secretsSvc.putSecret(userId, EMBEDDING_SECRET_KEY, next);
+    } else {
+      secretsSvc.deleteSecret(userId, EMBEDDING_SECRET_KEY);
+    }
+  }
+
+  const has_api_key = await secretsSvc.validateSecret(userId, EMBEDDING_SECRET_KEY);
+  return { ...merged, has_api_key };
+}
+
+async function requestEmbeddings(
+  userId: string,
+  texts: string[],
+  options?: { omitDimensions?: boolean }
+): Promise<number[][]> {
+  const cfg = await getEmbeddingConfig(userId);
+  if (!cfg.enabled) throw new Error("Embeddings are disabled for this user");
+  const apiKey = await secretsSvc.getSecret(userId, EMBEDDING_SECRET_KEY);
+  if (!apiKey) throw new Error("Embedding API key is not configured");
+  if (!texts.length) return [];
+
+  const body: Record<string, any> = {
+    model: cfg.model,
+    input: texts,
+  };
+  if (!options?.omitDimensions && cfg.dimensions) body.dimensions = cfg.dimensions;
+
+  const res = await fetch(`${cfg.api_url.replace(/\/+$/, "")}/embeddings`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const msg = await res.text().catch(() => "Embedding request failed");
+    throw new Error(`Embedding request failed (${res.status}): ${msg}`);
+  }
+
+  const payload = await res.json() as { data?: Array<{ embedding?: number[] }> };
+  const vectors = (payload.data || []).map((d) => d.embedding || []);
+  if (vectors.length !== texts.length) {
+    throw new Error("Embedding provider returned an unexpected number of vectors");
+  }
+  return vectors;
+}
+
+export async function embedTexts(userId: string, texts: string[]): Promise<number[][]> {
+  return requestEmbeddings(userId, texts);
+}
+
+export async function testEmbeddingConfig(
+  userId: string,
+  text: string
+): Promise<{ dimension: number; config: EmbeddingConfigWithStatus }> {
+  // Deliberately omit dimensions so providers return native/default dimensionality.
+  const vectors = await requestEmbeddings(userId, [text], { omitDimensions: true });
+  const first = vectors[0] || [];
+  if (!first.length) throw new Error("No embedding vector returned");
+
+  const current = await getEmbeddingConfig(userId);
+  const updated = normalizeConfig({ ...current, dimensions: first.length });
+  settingsSvc.putSetting(userId, EMBEDDING_SETTINGS_KEY, updated);
+  const has_api_key = await secretsSvc.validateSecret(userId, EMBEDDING_SECRET_KEY);
+
+  return {
+    dimension: first.length,
+    config: {
+      ...updated,
+      has_api_key,
+    },
+  };
+}
+
+export async function deleteWorldBookEntryEmbeddings(userId: string, entryId: string): Promise<void> {
+  const table = await getOrCreateTable();
+  await table.delete(
+    `user_id = ${sqlValue(userId)} AND source_type = 'world_book_entry' AND source_id = ${sqlValue(entryId)}`
+  );
+  scheduleOptimize();
+}
+
+export async function syncWorldBookEntryEmbedding(userId: string, entry: WorldBookEntry): Promise<void> {
+  const cfg = await getEmbeddingConfig(userId);
+  if (!cfg.enabled || !cfg.vectorize_world_books || entry.disabled) {
+    await deleteWorldBookEntryEmbeddings(userId, entry.id);
+    return;
+  }
+  const content = (entry.content || "").trim();
+  if (!content) {
+    await deleteWorldBookEntryEmbeddings(userId, entry.id);
+    return;
+  }
+
+  const [vector] = await embedTexts(userId, [content]);
+  const now = Math.floor(Date.now() / 1000);
+  const row: EmbeddingRow = {
+    id: rowId(userId, "world_book_entry", entry.id, 0),
+    user_id: userId,
+    source_type: "world_book_entry",
+    source_id: entry.id,
+    owner_id: entry.world_book_id,
+    chunk_index: 0,
+    content,
+    vector,
+    metadata_json: JSON.stringify({
+      comment: entry.comment,
+      key: entry.key,
+      keysecondary: entry.keysecondary,
+      world_book_id: entry.world_book_id,
+    }),
+    updated_at: now,
+  };
+
+  const table = await getOrCreateTable([row]);
+  await ensureVectorIndex(table);
+  await table
+    .mergeInsert("id")
+    .whenMatchedUpdateAll()
+    .whenNotMatchedInsertAll()
+    .execute(asLanceRows([row]));
+
+  scheduleOptimize();
+}
+
+export async function reindexWorldBookEntries(
+  userId: string,
+  entries: WorldBookEntry[],
+  options?: {
+    batchSize?: number;
+    onProgress?: (progress: { indexed: number; removed: number; failed: number; total: number; current: number }) => void;
+  }
+): Promise<{
+  indexed: number;
+  removed: number;
+  failed: number;
+}> {
+  const batchSize = Math.max(1, Math.min(options?.batchSize ?? 50, 200));
+  let indexed = 0;
+  let removed = 0;
+  let failed = 0;
+  let current = 0;
+  const total = entries.length;
+
+  // Separate entries with content (to index) from disabled/empty (to remove)
+  const toIndex: WorldBookEntry[] = [];
+  const toRemove: WorldBookEntry[] = [];
+  for (const entry of entries) {
+    if (entry.disabled || !(entry.content || "").trim()) {
+      toRemove.push(entry);
+    } else {
+      toIndex.push(entry);
+    }
+  }
+
+  // Remove disabled/empty entries from the vector index
+  for (const entry of toRemove) {
+    await deleteWorldBookEntryEmbeddings(userId, entry.id);
+    removed += 1;
+    current += 1;
+    options?.onProgress?.({ indexed, removed, failed, total, current });
+  }
+
+  // Batch-embed entries
+  for (let i = 0; i < toIndex.length; i += batchSize) {
+    const batch = toIndex.slice(i, i + batchSize);
+
+    try {
+      const cfg = await getEmbeddingConfig(userId);
+      if (!cfg.enabled || !cfg.vectorize_world_books) {
+        // If disabled, clean up all remaining
+        for (const entry of batch) {
+          await deleteWorldBookEntryEmbeddings(userId, entry.id);
+          removed += 1;
+          current += 1;
+          options?.onProgress?.({ indexed, removed, failed, total, current });
+        }
+        continue;
+      }
+
+      const texts = batch.map((e) => (e.content || "").trim());
+      const vectors = await embedTexts(userId, texts);
+      const now = Math.floor(Date.now() / 1000);
+
+      const rows: EmbeddingRow[] = batch.map((entry, idx) => ({
+        id: rowId(userId, "world_book_entry", entry.id, 0),
+        user_id: userId,
+        source_type: "world_book_entry",
+        source_id: entry.id,
+        owner_id: entry.world_book_id,
+        chunk_index: 0,
+        content: (entry.content || "").trim(),
+        vector: vectors[idx],
+        metadata_json: JSON.stringify({
+          comment: entry.comment,
+          key: entry.key,
+          keysecondary: entry.keysecondary,
+          world_book_id: entry.world_book_id,
+        }),
+        updated_at: now,
+      }));
+
+      const table = await getOrCreateTable(rows);
+      await ensureVectorIndex(table);
+      await table
+        .mergeInsert("id")
+        .whenMatchedUpdateAll()
+        .whenNotMatchedInsertAll()
+        .execute(asLanceRows(rows));
+
+      indexed += batch.length;
+      current += batch.length;
+      options?.onProgress?.({ indexed, removed, failed, total, current });
+    } catch (err) {
+      console.warn("[embeddings] Batch embedding failed:", err);
+      failed += batch.length;
+      current += batch.length;
+      options?.onProgress?.({ indexed, removed, failed, total, current });
+    }
+  }
+
+  // Compact all fragments into fewer files and prune old versions
+  try {
+    await optimizeTable();
+  } catch (err) {
+    console.warn("[embeddings] Post-reindex optimize failed:", err);
+  }
+
+  return { indexed, removed, failed };
+}
+
+export async function searchWorldBookEntries(
+  userId: string,
+  worldBookId: string,
+  query: string,
+  limit = 8
+): Promise<Array<{ entry_id: string; score: number; content: string }>> {
+  const cfg = await getEmbeddingConfig(userId);
+  if (!cfg.enabled || !cfg.vectorize_world_books) return [];
+  const text = query.trim();
+  if (!text) return [];
+
+  const table = await getOrCreateTable();
+  const [vector] = await embedTexts(userId, [text]);
+  const rows = await table
+    .query()
+    .nearestTo(vector)
+    .where(
+      `user_id = ${sqlValue(userId)} AND source_type = 'world_book_entry' AND owner_id = ${sqlValue(worldBookId)}`
+    )
+    .select(["source_id", "content", "_distance"])
+    .limit(Math.max(1, Math.min(limit, 50)))
+    .toArray();
+
+  return rows.map((row: any) => ({
+    entry_id: String(row.source_id),
+    score: typeof row._distance === "number" ? row._distance : 0,
+    content: String(row.content || ""),
+  }));
+}

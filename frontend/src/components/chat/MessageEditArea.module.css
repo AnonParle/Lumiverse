@@ -1,0 +1,52 @@
+/* ── Edit area ── */
+.editArea {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.editTextarea {
+  width: 100%;
+  min-height: 100px;
+  padding: 10px 12px;
+  background: var(--lumiverse-fill-subtle);
+  border: 1px solid var(--lumiverse-border);
+  border-radius: 10px;
+  color: var(--lumiverse-text);
+  font-size: calc(14px * var(--lumiverse-font-scale, 1));
+  font-family: inherit;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.editTextarea:focus {
+  border-color: var(--lumiverse-primary-muted);
+  outline: none;
+}
+
+.editActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.editCancelBtn {
+  padding: 6px 16px;
+  font-size: calc(13px * var(--lumiverse-font-scale, 1));
+  border-radius: 8px;
+  background: var(--lumiverse-fill-subtle);
+  border: 1px solid var(--lumiverse-border);
+  color: var(--lumiverse-text-muted);
+  cursor: pointer;
+}
+
+.editSaveBtn {
+  padding: 6px 16px;
+  font-size: calc(13px * var(--lumiverse-font-scale, 1));
+  font-weight: 600;
+  border-radius: 8px;
+  background: var(--lumiverse-primary-020);
+  border: 1px solid var(--lumiverse-primary-050);
+  color: var(--lumiverse-primary-text);
+  cursor: pointer;
+}

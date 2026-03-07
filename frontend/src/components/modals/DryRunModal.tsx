@@ -1,0 +1,190 @@
+import { useState, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
+import { motion, AnimatePresence } from 'motion/react'
+import { X, ChevronRight } from 'lucide-react'
+import { useStore } from '@/store'
+import type { DryRunResponse } from '@/api/generate'
+import styles from './DryRunModal.module.css'
+import clsx from 'clsx'
+
+const ROLE_CLASS: Record<string, string> = {
+  system: styles.roleSystem,
+  user: styles.roleUser,
+  assistant: styles.roleAssistant,
+}
+
+export default function DryRunModal() {
+  const modalProps = useStore((s) => s.modalProps) as DryRunResponse
+  const closeModal = useStore((s) => s.closeModal)
+
+  const [breakdownOpen, setBreakdownOpen] = useState(false)
+  const [paramsOpen, setParamsOpen] = useState(false)
+
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeModal()
+    }
+    document.addEventListener('keydown', handleEscape)
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', handleEscape)
+      document.body.style.overflow = ''
+    }
+  }, [closeModal])
+
+  const handleBackdropClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.target === e.currentTarget) closeModal()
+    },
+    [closeModal],
+  )
+
+  const { messages, breakdown, parameters, assistantPrefill, model, provider, tokenCount } = modalProps
+
+  // Build a token count lookup from tokenCount.breakdown (matched by name)
+  const tokensByName = new Map<string, number>()
+  if (tokenCount?.breakdown) {
+    for (const entry of tokenCount.breakdown) {
+      tokensByName.set(entry.name, entry.tokens)
+    }
+  }
+
+  return createPortal(
+    <AnimatePresence>
+      <motion.div
+        className={styles.backdrop}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.15 }}
+        onClick={handleBackdropClick}
+      >
+        <motion.div
+          className={styles.modal}
+          initial={{ opacity: 0, scale: 0.95, y: 10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 10 }}
+          transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+        >
+          {/* Header */}
+          <div className={styles.header}>
+            <h3 className={styles.headerTitle}>Prompt Dry Run</h3>
+            <span className={styles.badge}>
+              {provider} / {model}
+            </span>
+            <button
+              type="button"
+              className={styles.closeBtn}
+              onClick={closeModal}
+              aria-label="Close"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          {/* Scrollable body */}
+          <div className={styles.body}>
+            {/* Messages */}
+            <div className={styles.messagesSection}>
+              <p className={styles.sectionLabel}>
+                Messages ({messages.length})
+              </p>
+              {messages.map((msg, i) => (
+                <div key={i} className={styles.messageCard}>
+                  <div className={styles.messageHeader}>
+                    <span className={clsx(styles.roleBadge, ROLE_CLASS[msg.role])}>
+                      {msg.role}
+                    </span>
+                    <span className={styles.messageIndex}>#{i + 1}</span>
+                  </div>
+                  <div className={styles.messageContent}>{msg.content}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Assistant prefill */}
+            {assistantPrefill && (
+              <div className={styles.prefillSection}>
+                <p className={styles.prefillLabel}>Assistant Prefill</p>
+                <div className={styles.prefillContent}>{assistantPrefill}</div>
+              </div>
+            )}
+
+            {/* Breakdown */}
+            {breakdown.length > 0 && (
+              <div className={styles.collapsible}>
+                <button
+                  type="button"
+                  className={styles.collapsibleHeader}
+                  onClick={() => setBreakdownOpen((o) => !o)}
+                >
+                  <ChevronRight
+                    size={14}
+                    className={clsx(styles.chevron, breakdownOpen && styles.chevronOpen)}
+                  />
+                  Assembly Breakdown ({breakdown.length})
+                </button>
+                {breakdownOpen && (
+                  <div className={styles.collapsibleBody}>
+                    {tokenCount && (
+                      <div className={styles.breakdownSummary}>
+                        <span>{tokenCount.total_tokens.toLocaleString()} total tokens</span>
+                        {tokenCount.tokenizer_name && (
+                          <span className={styles.breakdownSource}>via {tokenCount.tokenizer_name}</span>
+                        )}
+                      </div>
+                    )}
+                    <div className={styles.breakdownList}>
+                      {breakdown.map((entry, i) => {
+                        const tokens = tokensByName.get(entry.name)
+                        return (
+                          <div key={i} className={styles.breakdownEntry}>
+                            <span className={styles.breakdownLabel}>{entry.name}</span>
+                            <span className={styles.breakdownSource}>{entry.type}</span>
+                            {entry.role && (
+                              <span className={styles.breakdownRole}>{entry.role}</span>
+                            )}
+                            {tokens != null && (
+                              <span className={styles.breakdownTokens}>
+                                {tokens.toLocaleString()} tokens
+                              </span>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Parameters */}
+            {Object.keys(parameters).length > 0 && (
+              <div className={styles.collapsible}>
+                <button
+                  type="button"
+                  className={styles.collapsibleHeader}
+                  onClick={() => setParamsOpen((o) => !o)}
+                >
+                  <ChevronRight
+                    size={14}
+                    className={clsx(styles.chevron, paramsOpen && styles.chevronOpen)}
+                  />
+                  Parameters
+                </button>
+                {paramsOpen && (
+                  <div className={styles.collapsibleBody}>
+                    <div className={styles.parametersJson}>
+                      {JSON.stringify(parameters, null, 2)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>,
+    document.body,
+  )
+}

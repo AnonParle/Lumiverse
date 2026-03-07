@@ -1,0 +1,127 @@
+import { useCallback } from 'react'
+import { useStore } from '@/store'
+import { useMessageCard } from '@/hooks/useMessageCard'
+import MessageContent from './MessageContent'
+import MessageEditArea from './MessageEditArea'
+import MessageActions from './MessageActions'
+import SwipeControls from './SwipeControls'
+import GreetingNav from './GreetingNav'
+import ReasoningBlock from './ReasoningBlock'
+import StreamingIndicator from './StreamingIndicator'
+import LazyImage from '@/components/shared/LazyImage'
+import type { Message } from '@/types/api'
+import styles from './MinimalMessage.module.css'
+import clsx from 'clsx'
+
+interface MinimalMessageProps {
+  message: Message
+  chatId: string
+}
+
+export default function MinimalMessage({ message, chatId }: MinimalMessageProps) {
+  const {
+    isEditing,
+    editContent,
+    setEditContent,
+    isUser,
+    isActivelyStreaming,
+    displayContent,
+    reasoning,
+    reasoningDuration,
+    avatarUrl,
+    displayName,
+    macroUserName,
+    handleEdit,
+    handleSaveEdit,
+    handleCancelEdit,
+    handleDelete,
+  } = useMessageCard(message, chatId)
+
+  const openModal = useStore((s) => s.openModal)
+  const handlePromptBreakdown = useCallback(() => {
+    openModal('promptItemizer', { messageId: message.id })
+  }, [openModal, message.id])
+
+  return (
+    <div
+      className={clsx(
+        styles.card,
+        isUser ? styles.user : styles.character,
+        isActivelyStreaming && styles.streaming,
+      )}
+      data-message-id={message.id}
+    >
+      {/* Avatar */}
+      <div className={styles.avatar}>
+        <LazyImage
+          src={avatarUrl}
+          alt={displayName}
+          fallback={
+            <div className={styles.avatarFallback}>
+              {displayName?.[0]?.toUpperCase() || '?'}
+            </div>
+          }
+        />
+      </div>
+
+      <div className={styles.bubble}>
+        {/* Name */}
+        <div className={styles.header}>
+          <span className={clsx(styles.name, isUser ? styles.nameUser : styles.nameChar)}>
+            {displayName}
+          </span>
+        </div>
+
+        {/* Reasoning block */}
+        {reasoning && (
+          <ReasoningBlock
+            reasoning={reasoning}
+            reasoningDuration={reasoningDuration}
+            isStreaming={isActivelyStreaming}
+          />
+        )}
+
+        {/* Content */}
+        {isEditing ? (
+          <MessageEditArea
+            editContent={editContent}
+            onChangeContent={setEditContent}
+            onSave={handleSaveEdit}
+            onCancel={handleCancelEdit}
+          />
+        ) : displayContent ? (
+          <MessageContent
+            content={displayContent}
+            isUser={isUser}
+            userName={macroUserName}
+            isStreaming={isActivelyStreaming}
+            messageId={message.id}
+            chatId={chatId}
+          />
+        ) : isActivelyStreaming ? (
+          <StreamingIndicator />
+        ) : null}
+
+        {/* Swipe controls */}
+        {message.swipes && message.swipes.length > 1 && !isEditing && (
+          <SwipeControls message={message} chatId={chatId} />
+        )}
+
+        {/* Greeting navigator for first message */}
+        {message.index_in_chat === 0 && !isUser && !isEditing && (
+          <GreetingNav message={message} chatId={chatId} />
+        )}
+      </div>
+
+      {/* Actions */}
+      {!isEditing && (
+        <MessageActions
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+          onPromptBreakdown={!isUser ? handlePromptBreakdown : undefined}
+          isUser={isUser}
+        />
+      )}
+    </div>
+  )
+}

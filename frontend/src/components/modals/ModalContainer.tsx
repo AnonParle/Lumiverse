@@ -1,0 +1,70 @@
+import { useEffect } from 'react'
+import { useStore } from '@/store'
+import ConfirmationModal from '@/components/shared/ConfirmationModal'
+import SettingsModal from './SettingsModal'
+import GreetingPickerModal from './GreetingPickerModal'
+import WorldBookEditorModal from './WorldBookEditorModal'
+import LumiaEditorModal from '@/components/panels/creator-workshop/LumiaEditorModal'
+import LoomEditorModal from '@/components/panels/creator-workshop/LoomEditorModal'
+import ToolEditorModal from '@/components/panels/creator-workshop/ToolEditorModal'
+import DryRunModal from './DryRunModal'
+import PromptItemizerModal from './PromptItemizerModal'
+import GroupChatCreatorModal from './GroupChatCreatorModal'
+
+export default function ModalContainer() {
+  const settingsModalOpen = useStore((s) => s.settingsModalOpen)
+  const closeSettings = useStore((s) => s.closeSettings)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      useStore.getState().openSettings(detail?.view || 'extensions')
+    }
+    window.addEventListener('spindle:open-settings', handler)
+    return () => window.removeEventListener('spindle:open-settings', handler)
+  }, [])
+
+  const activeModal = useStore((s) => s.activeModal)
+  const modalProps = useStore((s) => s.modalProps)
+  const closeModal = useStore((s) => s.closeModal)
+
+  return (
+    <>
+      {settingsModalOpen && <SettingsModal onClose={closeSettings} />}
+
+      {activeModal === 'confirm' && (
+        <ConfirmationModal
+          isOpen={true}
+          title={modalProps.title || 'Confirm'}
+          message={modalProps.message || 'Are you sure?'}
+          variant={modalProps.variant || 'safe'}
+          confirmText={modalProps.confirmText}
+          onConfirm={() => {
+            modalProps.onConfirm?.()
+            closeModal()
+          }}
+          onCancel={closeModal}
+        />
+      )}
+
+      {activeModal === 'worldBookEditor' && <WorldBookEditorModal />}
+
+      {activeModal === 'greetingPicker' && modalProps.character && (
+        <GreetingPickerModal
+          character={modalProps.character}
+          onSelect={(greetingIndex) => {
+            modalProps.onSelect?.(greetingIndex)
+            closeModal()
+          }}
+          onCancel={closeModal}
+        />
+      )}
+
+      {activeModal === 'dryRun' && <DryRunModal />}
+      {activeModal === 'promptItemizer' && <PromptItemizerModal />}
+      {activeModal === 'groupChatCreator' && <GroupChatCreatorModal />}
+      {activeModal === 'lumiaEditor' && <LumiaEditorModal />}
+      {activeModal === 'loomEditor' && <LoomEditorModal />}
+      {activeModal === 'toolEditor' && <ToolEditorModal />}
+    </>
+  )
+}

@@ -1,0 +1,59 @@
+import { get, post, put, del, upload, BASE_URL } from './client'
+import type {
+  Character,
+  CreateCharacterInput,
+  UpdateCharacterInput,
+  PaginatedResult,
+  ImportResult,
+  BatchDeleteResult,
+} from '@/types/api'
+
+export const charactersApi = {
+  list(params?: { limit?: number; offset?: number; search?: string }) {
+    return get<PaginatedResult<Character>>('/characters', params)
+  },
+
+  get(id: string) {
+    return get<Character>(`/characters/${id}`)
+  },
+
+  create(input: CreateCharacterInput) {
+    return post<Character>('/characters', input)
+  },
+
+  update(id: string, input: UpdateCharacterInput) {
+    return put<Character>(`/characters/${id}`, input)
+  },
+
+  delete(id: string) {
+    return del<void>(`/characters/${id}`)
+  },
+
+  duplicate(id: string) {
+    return post<Character>(`/characters/${id}/duplicate`)
+  },
+
+  uploadAvatar(id: string, file: File) {
+    const form = new FormData()
+    form.append('avatar', file)
+    return upload<Character>(`/characters/${id}/avatar`, form)
+  },
+
+  avatarUrl(id: string) {
+    return `${BASE_URL}/characters/${id}/avatar`
+  },
+
+  importFile(file: File) {
+    const form = new FormData()
+    form.append('file', file)
+    return upload<ImportResult>('/characters/import', form)
+  },
+
+  importUrl(url: string) {
+    return post<ImportResult>('/characters/import-url', { url })
+  },
+
+  batchDelete(ids: string[], keepChats = false) {
+    return post<BatchDeleteResult>('/characters/batch-delete', { ids, keep_chats: keepChats })
+  },
+}

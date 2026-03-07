@@ -1,0 +1,513 @@
+// Types copied from ~/Projects/Lumiverse-Backend/src/types/
+
+// ---- Character ----
+export interface Character {
+  id: string;
+  name: string;
+  avatar_path: string | null;
+  image_id: string | null;
+  description: string;
+  personality: string;
+  scenario: string;
+  first_mes: string;
+  mes_example: string;
+  creator: string;
+  creator_notes: string;
+  system_prompt: string;
+  post_history_instructions: string;
+  tags: string[];
+  alternate_greetings: string[];
+  talkativeness: number; // 0.0–1.0, default 0.5
+  extensions: Record<string, any>;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface CreateCharacterInput {
+  name: string;
+  description?: string;
+  personality?: string;
+  scenario?: string;
+  first_mes?: string;
+  mes_example?: string;
+  creator?: string;
+  creator_notes?: string;
+  system_prompt?: string;
+  post_history_instructions?: string;
+  tags?: string[];
+  alternate_greetings?: string[];
+  talkativeness?: number;
+  extensions?: Record<string, any>;
+}
+
+export type UpdateCharacterInput = Partial<CreateCharacterInput>;
+
+// ---- Chat ----
+export interface Chat {
+  id: string;
+  character_id: string;
+  name: string;
+  metadata: Record<string, any>;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface CreateChatInput {
+  character_id: string;
+  name?: string;
+  metadata?: Record<string, any>;
+  greeting_index?: number;
+}
+
+export interface RecentChat {
+  id: string;
+  character_id: string;
+  name: string;
+  metadata: Record<string, any>;
+  created_at: number;
+  updated_at: number;
+  character_name: string;
+  character_avatar_path: string | null;
+  character_image_id: string | null;
+}
+
+// ---- Group Chat ----
+export interface CreateGroupChatInput {
+  character_ids: string[];
+  name?: string;
+  greeting_character_id?: string;
+  greeting_index?: number;
+}
+
+export interface GroupChatMetadata {
+  group: true;
+  character_ids: string[];
+  talkativeness_overrides?: Record<string, number>;
+  concatenation_mode?: boolean;
+}
+
+// ---- Message ----
+export interface MessageExtra {
+  persona_id?: string;
+  /** Set by the backend prompt assembler when a user_append or assistant_append
+   *  Loom block injects content into this message. Messages with this tag are
+   *  hidden from the chat list but still included in prompt assembly. */
+  _loom_inject?: import('@/lib/loom/types').LoomInjectTag;
+  _loom_block_id?: string;
+  [key: string]: any;
+}
+
+export interface Message {
+  id: string;
+  chat_id: string;
+  index_in_chat: number;
+  is_user: boolean;
+  name: string;
+  content: string;
+  send_date: number;
+  swipe_id: number;
+  swipes: string[];
+  extra: MessageExtra;
+  parent_message_id: string | null;
+  branch_id: string | null;
+  created_at: number;
+}
+
+export interface CreateMessageInput {
+  is_user: boolean;
+  name: string;
+  content: string;
+  extra?: Record<string, any>;
+  parent_message_id?: string;
+  branch_id?: string;
+}
+
+export interface UpdateMessageInput {
+  content?: string;
+  name?: string;
+  extra?: Record<string, any>;
+}
+
+// ---- Connection Profile ----
+export interface ConnectionProfile {
+  id: string;
+  name: string;
+  provider: string;
+  api_url: string;
+  model: string;
+  preset_id: string | null;
+  is_default: boolean;
+  has_api_key: boolean;
+  metadata: Record<string, any>;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface CreateConnectionProfileInput {
+  name: string;
+  provider: string;
+  api_url?: string;
+  api_key?: string;
+  model?: string;
+  preset_id?: string;
+  is_default?: boolean;
+  metadata?: Record<string, any>;
+}
+
+export type UpdateConnectionProfileInput = Partial<CreateConnectionProfileInput>;
+
+export interface ProviderInfo {
+  id: string
+  name: string
+  default_url: string
+}
+
+export interface ConnectionTestResult {
+  success: boolean
+  message: string
+  provider: string
+}
+
+export interface ConnectionModelsResult {
+  models: string[]
+  provider: string
+  error?: string
+}
+
+// ---- Persona ----
+export interface Persona {
+  id: string;
+  name: string;
+  description: string;
+  avatar_path: string | null;
+  image_id: string | null;
+  attached_world_book_id: string | null;
+  is_default: boolean;
+  metadata: Record<string, any>;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface CreatePersonaInput {
+  name: string;
+  description?: string;
+  is_default?: boolean;
+  attached_world_book_id?: string;
+  metadata?: Record<string, any>;
+}
+
+export type UpdatePersonaInput = Partial<CreatePersonaInput>;
+
+// ---- Preset ----
+export interface Preset {
+  id: string;
+  name: string;
+  provider: string;
+  parameters: Record<string, any>;
+  prompt_order: any[];
+  prompts: Record<string, any>;
+  metadata: Record<string, any>;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface CreatePresetInput {
+  name: string;
+  provider: string;
+  parameters?: Record<string, any>;
+  prompt_order?: any[];
+  prompts?: Record<string, any>;
+  metadata?: Record<string, any>;
+}
+
+export type UpdatePresetInput = Partial<CreatePresetInput>;
+
+export interface PresetRegistryItem {
+  id: string;
+  name: string;
+  provider: string;
+  block_count: number;
+  updated_at: number;
+}
+
+// ---- Character Gallery ----
+export interface CharacterGalleryItem {
+  id: string;
+  image_id: string;
+  caption: string;
+  sort_order: number;
+  created_at: number;
+  width: number | null;
+  height: number | null;
+  mime_type: string;
+}
+
+// ---- Image ----
+export interface Image {
+  id: string;
+  filename: string;
+  original_filename: string;
+  mime_type: string;
+  width: number | null;
+  height: number | null;
+  has_thumbnail: boolean;
+  created_at: number;
+}
+
+// ---- World Book ----
+export interface WorldBook {
+  id: string;
+  name: string;
+  description: string;
+  metadata: Record<string, any>;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface WorldBookEntry {
+  id: string;
+  world_book_id: string;
+  uid: string;
+  key: string[];
+  keysecondary: string[];
+  content: string;
+  comment: string;
+  position: number;
+  depth: number;
+  role: string | null;
+  order_value: number;
+  selective: boolean;
+  constant: boolean;
+  disabled: boolean;
+  group_name: string;
+  group_override: boolean;
+  group_weight: number;
+  probability: number;
+  scan_depth: number | null;
+  case_sensitive: boolean;
+  match_whole_words: boolean;
+  automation_id: string | null;
+  use_regex: boolean;
+  prevent_recursion: boolean;
+  exclude_recursion: boolean;
+  delay_until_recursion: boolean;
+  priority: number;
+  sticky: number;
+  cooldown: number;
+  delay: number;
+  selective_logic: number;
+  use_probability: boolean;
+  vectorized: boolean;
+  extensions: Record<string, any>;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface CreateWorldBookInput {
+  name: string;
+  description?: string;
+  metadata?: Record<string, any>;
+}
+
+export type UpdateWorldBookInput = Partial<CreateWorldBookInput>;
+
+export interface CreateWorldBookEntryInput {
+  key?: string[];
+  keysecondary?: string[];
+  content?: string;
+  comment?: string;
+  position?: number;
+  depth?: number;
+  role?: string;
+  order_value?: number;
+  selective?: boolean;
+  constant?: boolean;
+  disabled?: boolean;
+  group_name?: string;
+  group_override?: boolean;
+  group_weight?: number;
+  probability?: number;
+  scan_depth?: number;
+  case_sensitive?: boolean;
+  match_whole_words?: boolean;
+  automation_id?: string;
+  use_regex?: boolean;
+  prevent_recursion?: boolean;
+  exclude_recursion?: boolean;
+  delay_until_recursion?: boolean;
+  priority?: number;
+  sticky?: number;
+  cooldown?: number;
+  delay?: number;
+  selective_logic?: number;
+  use_probability?: boolean;
+  vectorized?: boolean;
+  extensions?: Record<string, any>;
+}
+
+export interface EmbeddingConfig {
+  enabled: boolean;
+  provider: 'openai-compatible' | 'openai' | 'openrouter' | 'electronhub' | 'nanogpt';
+  api_url: string;
+  model: string;
+  dimensions: number | null;
+  retrieval_top_k: number;
+  hybrid_weight_mode: 'keyword_first' | 'balanced' | 'vector_first';
+  preferred_context_size: number;
+  batch_size: number;
+  similarity_threshold: number;
+  vectorize_world_books: boolean;
+  vectorize_chat_messages: boolean;
+  vectorize_chat_documents: boolean;
+  has_api_key: boolean;
+}
+
+export interface ActivatedWorldInfoEntry {
+  id: string;
+  comment: string;
+  keys: string[];
+  source: 'keyword' | 'vector';
+  score?: number;
+}
+
+export type UpdateWorldBookEntryInput = CreateWorldBookEntryInput;
+
+// ---- Pack ----
+export interface Pack {
+  id: string;
+  user_id: string;
+  name: string;
+  author: string;
+  cover_url: string | null;
+  version: string;
+  is_custom: boolean;
+  source_url: string | null;
+  extras: Record<string, any>;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface LumiaItem {
+  id: string;
+  pack_id: string;
+  name: string;
+  avatar_url: string | null;
+  author_name: string;
+  definition: string;
+  personality: string;
+  behavior: string;
+  gender_identity: 0 | 1 | 2;
+  version: string;
+  sort_order: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export type LoomItemCategory = 'narrative_style' | 'loom_utility' | 'retrofit';
+
+export interface LoomItem {
+  id: string;
+  pack_id: string;
+  name: string;
+  content: string;
+  category: LoomItemCategory;
+  author_name: string;
+  version: string;
+  sort_order: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface LoomTool {
+  id: string;
+  pack_id: string;
+  tool_name: string;
+  display_name: string;
+  description: string;
+  prompt: string;
+  input_schema: Record<string, any>;
+  result_variable: string;
+  store_in_deliberation: boolean;
+  author_name: string;
+  version: string;
+  sort_order: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface PackWithItems extends Pack {
+  lumia_items: LumiaItem[];
+  loom_items: LoomItem[];
+  loom_tools: LoomTool[];
+}
+
+export interface CreatePackInput {
+  name: string;
+  author?: string;
+  cover_url?: string;
+  version?: string;
+  is_custom?: boolean;
+  source_url?: string;
+  extras?: Record<string, any>;
+}
+
+export type UpdatePackInput = Partial<CreatePackInput>;
+
+export interface CreateLumiaItemInput {
+  name: string;
+  avatar_url?: string;
+  author_name?: string;
+  definition?: string;
+  personality?: string;
+  behavior?: string;
+  gender_identity?: 0 | 1 | 2;
+  version?: string;
+  sort_order?: number;
+}
+
+export type UpdateLumiaItemInput = Partial<CreateLumiaItemInput>;
+
+export interface CreateLoomItemInput {
+  name: string;
+  content?: string;
+  category?: LoomItemCategory;
+  author_name?: string;
+  version?: string;
+  sort_order?: number;
+}
+
+export type UpdateLoomItemInput = Partial<CreateLoomItemInput>;
+
+export interface CreateLoomToolInput {
+  tool_name: string;
+  display_name?: string;
+  description?: string;
+  prompt?: string;
+  input_schema?: Record<string, any>;
+  result_variable?: string;
+  store_in_deliberation?: boolean;
+  author_name?: string;
+  version?: string;
+  sort_order?: number;
+}
+
+export type UpdateLoomToolInput = Partial<CreateLoomToolInput>;
+
+// ---- Import / Batch ----
+export interface ImportResult {
+  character: Character
+  message?: string
+}
+
+export interface BatchDeleteResult {
+  deleted: string[]
+  failed: string[]
+}
+
+// ---- Pagination ----
+export interface PaginatedResult<T> {
+  data: T[];
+  total: number;
+  limit: number;
+  offset: number;
+}

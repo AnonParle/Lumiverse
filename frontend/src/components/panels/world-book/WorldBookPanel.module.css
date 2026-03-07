@@ -1,0 +1,265 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Top bar ── */
+.topBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bookSelect {
+  flex: 1;
+  min-width: 0;
+  background: var(--lumiverse-fill-subtle);
+  border: 1px solid var(--lumiverse-border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12.5px;
+  color: var(--lumiverse-text);
+  outline: none;
+  cursor: pointer;
+}
+
+.bookSelect:focus {
+  border-color: var(--lumiverse-primary);
+}
+
+.iconBtn {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: var(--lumiverse-fill-subtle);
+  border: 1px solid var(--lumiverse-border);
+  color: var(--lumiverse-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--lumiverse-transition-fast);
+}
+
+.iconBtn:hover {
+  background: var(--lumiverse-primary);
+  border-color: var(--lumiverse-primary);
+  color: white;
+}
+
+/* ── Book fields toggle ── */
+.bookFieldsToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--lumiverse-fill-subtle);
+  border: 1px solid var(--lumiverse-border);
+  color: var(--lumiverse-text);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--lumiverse-transition-fast);
+}
+
+.bookFieldsToggle:hover {
+  border-color: var(--lumiverse-primary);
+}
+
+.bookFieldsLabel {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevron {
+  color: var(--lumiverse-text-dim);
+  transition: transform var(--lumiverse-transition-fast);
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+/* ── Book fields ── */
+.bookFields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--lumiverse-fill-subtle);
+  border: 1px solid var(--lumiverse-border);
+  border-radius: 8px;
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.fieldLabel {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--lumiverse-text-muted);
+}
+
+.fieldInput {
+  background: var(--lumiverse-bg);
+  border: 1px solid var(--lumiverse-border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12.5px;
+  color: var(--lumiverse-text);
+  outline: none;
+  transition: border-color var(--lumiverse-transition-fast);
+}
+
+.fieldInput:focus {
+  border-color: var(--lumiverse-primary);
+}
+
+.deleteBookBtn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid var(--lumiverse-border);
+  color: var(--lumiverse-text-dim);
+  font-size: 11px;
+  cursor: pointer;
+  align-self: flex-start;
+  transition: all var(--lumiverse-transition-fast);
+}
+
+.deleteBookBtn:hover {
+  border-color: var(--lumiverse-error);
+  color: var(--lumiverse-error);
+}
+
+/* ── Entry list ── */
+.entryListHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.entryListTitle {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--lumiverse-text);
+}
+
+.newEntryBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--lumiverse-primary);
+  border: none;
+  color: white;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: opacity var(--lumiverse-transition-fast);
+}
+
+.newEntryBtn:hover {
+  opacity: 0.85;
+}
+
+.entryList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+}
+
+.entryRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--lumiverse-fill-subtle);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all var(--lumiverse-transition-fast);
+}
+
+.entryRow:hover {
+  border-color: var(--lumiverse-border);
+}
+
+.entryRowActive,
+.entryRowActive:hover {
+  border-color: var(--lumiverse-primary);
+  background: var(--lumiverse-primary-light);
+}
+
+.entryComment {
+  flex: 1;
+  font-size: 12px;
+  color: var(--lumiverse-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.entryKeys {
+  font-size: 11px;
+  color: var(--lumiverse-text-dim);
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+}
+
+.entryToggle {
+  accent-color: var(--lumiverse-primary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.entryDeleteBtn {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: transparent;
+  border: none;
+  color: var(--lumiverse-text-dim);
+  cursor: pointer;
+  opacity: 0;
+  flex-shrink: 0;
+  margin-right: -6px;
+  transition: all var(--lumiverse-transition-fast);
+}
+
+.entryRow:hover .entryDeleteBtn {
+  opacity: 1;
+}
+
+.entryDeleteBtn:hover {
+  color: var(--lumiverse-error);
+}
+
+/* ── Empty state ── */
+.emptyState {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--lumiverse-text-dim);
+  font-size: 13px;
+  font-style: italic;
+}

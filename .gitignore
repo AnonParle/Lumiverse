@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+bun.lock
+.claude/
+
+# Build output
+dist/
+
+# =============================================================================
+# User instance data — NEVER commit these
+# =============================================================================
+
+# Main data directory (databases, uploads, avatars, extensions, etc.)
+data/
+
+# SQLite databases (catch any outside data/)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# =============================================================================
+# Secrets & environment
+# =============================================================================
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Keep the example for reference
+!.env.example
+
+# =============================================================================
+# OS / editor
+# =============================================================================
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# =============================================================================
+# Zensical docs build output
+# =============================================================================
+developer-docs/site/
+*.md
+!LICENSE.md

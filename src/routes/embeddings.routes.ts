@@ -1,0 +1,101 @@
+import { Hono } from "hono";
+import * as embeddingsSvc from "../services/embeddings.service";
+import * as worldBooksSvc from "../services/world-books.service";
+
+const app = new Hono();
+
+app.get("/config", async (c) => {
+  const userId = c.get("userId");
+  return c.json(await embeddingsSvc.getEmbeddingConfig(userId));
+});
+
+app.put("/config", async (c) => {
+  const userId = c.get("userId");
+  const body = await c.req.json();
+  const updated = await embeddingsSvc.updateEmbeddingConfig(userId, body);
+  return c.json(updated);
+});
+
+app.post("/test", async (c) => {
+  const userId = c.get("userId");
+  const body = await c.req.json<{ text?: string }>();
+  const sample = body.text?.trim() || "Lumiverse embedding connectivity test.";
+  const result = await embeddingsSvc.testEmbeddingConfig(userId, sample);
+  return c.json({ success: true, ...result, applied_dimensions: result.dimension });
+});
+
+app.post("/world-books/:bookId/reindex", async (c) => {
+  const userId = c.get("userId");
+  const bookId = c.req.param("bookId");
+  const book = worldBooksSvc.getWorldBook(userId, bookId);
+  if (!book) return c.json({ error: "World book not found" }, 404);
+  const entries = worldBooksSvc.listEntries(userId, bookId);
+
+  const body = await c.req.json<{ batch_size?: number }>().catch(() => ({} as { batch_size?: number }));
+  const embeddingCfg = await embeddingsSvc.getEmbeddingConfig(userId);
+  const batchSize = body.batch_size || embeddingCfg.batch_size;
+  const wantsStream = c.req.header("accept")?.includes("text/event-stream");
+
+  if (wantsStream) {
+    // SSE streaming progress
+    const stream = new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder();
+        const send = (event: string, data: any) => {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        };
+
+        send("progress", { indexed: 0, removed: 0, failed: 0, total: entries.length, current: 0 });
+
+        try {
+          const result = await embeddingsSvc.reindexWorldBookEntries(userId, entries, {
+            batchSize,
+            onProgress: (progress) => send("progress", progress),
+          });
+          send("done", { success: true, ...result, total: entries.length });
+        } catch (err: any) {
+          send("error", { error: err.message || "Reindex failed" });
+        }
+        controller.close();
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
+  }
+
+  // Non-streaming fallback
+  const result = await embeddingsSvc.reindexWorldBookEntries(userId, entries, { batchSize });
+  return c.json({ success: true, ...result, total: entries.length });
+});
+
+app.post("/optimize", async (c) => {
+  try {
+    await embeddingsSvc.optimizeTable();
+    return c.json({ success: true });
+  } catch (err: any) {
+    return c.json({ error: err.message || "Optimize failed" }, 500);
+  }
+});
+
+app.post("/world-books/:bookId/search", async (c) => {
+  const userId = c.get("userId");
+  const bookId = c.req.param("bookId");
+  const book = worldBooksSvc.getWorldBook(userId, bookId);
+  if (!book) return c.json({ error: "World book not found" }, 404);
+
+  const body = await c.req.json<{ query?: string; limit?: number }>();
+  if (!body.query || !body.query.trim()) {
+    return c.json({ error: "query is required" }, 400);
+  }
+
+  const results = await embeddingsSvc.searchWorldBookEntries(userId, bookId, body.query, body.limit ?? 8);
+  return c.json({ results });
+});
+
+export { app as embeddingsRoutes };

@@ -1,0 +1,144 @@
+import { Hono } from "hono";
+import * as svc from "../services/characters.service";
+import * as files from "../services/files.service";
+import * as images from "../services/images.service";
+import * as cardSvc from "../services/character-card.service";
+import { parsePagination } from "../services/pagination";
+
+const app = new Hono();
+
+app.get("/", (c) => {
+  const userId = c.get("userId");
+  const pagination = parsePagination(c.req.query("limit"), c.req.query("offset"));
+  return c.json(svc.listCharacters(userId, pagination));
+});
+
+app.post("/", async (c) => {
+  const userId = c.get("userId");
+  const body = await c.req.json();
+  if (!body.name) return c.json({ error: "name is required" }, 400);
+  const character = svc.createCharacter(userId, body);
+  return c.json(character, 201);
+});
+
+app.get("/:id", (c) => {
+  const userId = c.get("userId");
+  const char = svc.getCharacter(userId, c.req.param("id"));
+  if (!char) return c.json({ error: "Not found" }, 404);
+  return c.json(char);
+});
+
+app.put("/:id", async (c) => {
+  const userId = c.get("userId");
+  const body = await c.req.json();
+  const char = svc.updateCharacter(userId, c.req.param("id"), body);
+  if (!char) return c.json({ error: "Not found" }, 404);
+  return c.json(char);
+});
+
+app.delete("/:id", (c) => {
+  const userId = c.get("userId");
+  const deleted = svc.deleteCharacter(userId, c.req.param("id"));
+  if (!deleted) return c.json({ error: "Not found" }, 404);
+  return c.json({ success: true });
+});
+
+app.get("/:id/avatar", (c) => {
+  const userId = c.get("userId");
+  const char = svc.getCharacter(userId, c.req.param("id"));
+  if (!char) return c.json({ error: "Not found" }, 404);
+
+  // Prefer image_id, fall back to legacy avatar_path
+  if (char.image_id) {
+    const filepath = images.getImageFilePath(userId, char.image_id);
+    if (filepath) {
+      const response = new Response(Bun.file(filepath));
+      response.headers.set("Cache-Control", "public, max-age=31536000, immutable");
+      return response;
+    }
+  }
+
+  if (char.avatar_path) {
+    const filepath = files.getAvatarPath(char.avatar_path);
+    if (filepath) {
+      const response = new Response(Bun.file(filepath));
+      response.headers.set("Cache-Control", "public, max-age=31536000, immutable");
+      return response;
+    }
+  }
+
+  return c.json({ error: "Not found" }, 404);
+});
+
+app.post("/:id/duplicate", (c) => {
+  const userId = c.get("userId");
+  const character = svc.duplicateCharacter(userId, c.req.param("id"));
+  if (!character) return c.json({ error: "Not found" }, 404);
+  return c.json(character, 201);
+});
+
+app.post("/:id/avatar", async (c) => {
+  const userId = c.get("userId");
+  const char = svc.getCharacter(userId, c.req.param("id"));
+  if (!char) return c.json({ error: "Not found" }, 404);
+
+  const formData = await c.req.formData();
+  const file = formData.get("avatar") as File | null;
+  if (!file) return c.json({ error: "avatar file is required" }, 400);
+
+  // Clean up old image if present
+  if (char.image_id) images.deleteImage(userId, char.image_id);
+  if (char.avatar_path) files.deleteAvatar(char.avatar_path);
+
+  const image = await images.uploadImage(userId, file);
+  svc.setCharacterImage(userId, char.id, image.id);
+  svc.setCharacterAvatar(userId, char.id, image.filename);
+  return c.json({ image_id: image.id, avatar_path: image.filename });
+});
+
+app.post("/import", async (c) => {
+  const userId = c.get("userId");
+  const contentType = c.req.header("content-type") || "";
+
+  try {
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await c.req.formData();
+      const file = formData.get("file") as File | null;
+      if (!file) return c.json({ error: "file is required" }, 400);
+
+      if (file.type === "image/png" || file.name?.endsWith(".png")) {
+        // PNG card — extract embedded JSON + use as avatar
+        const cardInput = await cardSvc.extractCardFromPng(file);
+        const character = svc.createCharacter(userId, cardInput);
+        const image = await images.uploadImage(userId, file);
+        svc.setCharacterImage(userId, character.id, image.id);
+        svc.setCharacterAvatar(userId, character.id, image.filename);
+        const imported = svc.getCharacter(userId, character.id)!;
+        return c.json({ character: imported }, 201);
+      } else {
+        // JSON file — read text content, parse card spec
+        const text = await file.text();
+        let json: any;
+        try {
+          json = JSON.parse(text);
+        } catch {
+          return c.json({ error: "Invalid JSON in uploaded file" }, 400);
+        }
+        const cardInput = cardSvc.parseCardJson(json);
+        const character = svc.createCharacter(userId, cardInput);
+        return c.json({ character }, 201);
+      }
+    } else {
+      // Raw JSON body — support both card-spec wrapper and flat input
+      const body = await c.req.json();
+      const input = (body.spec && body.data) ? cardSvc.parseCardJson(body) : body;
+      if (!input.name) return c.json({ error: "name is required" }, 400);
+      const character = svc.createCharacter(userId, input);
+      return c.json({ character }, 201);
+    }
+  } catch (err: any) {
+    return c.json({ error: err.message || "Failed to import character card" }, 400);
+  }
+});
+
+export { app as charactersRoutes };

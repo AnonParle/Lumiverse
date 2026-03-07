@@ -1,0 +1,459 @@
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useNavigate } from 'react-router'
+import { motion, AnimatePresence } from 'motion/react'
+import { RefreshCw, MessageSquarePlus, Trash2, Loader2, Users } from 'lucide-react'
+import { chatsApi } from '@/api/chats'
+import { charactersApi } from '@/api/characters'
+import { useStore } from '@/store'
+import { useScrollGate } from '@/hooks/useScrollGate'
+import LazyImage from '@/components/shared/LazyImage'
+import ConfirmationModal from '@/components/shared/ConfirmationModal'
+import type { RecentChat } from '@/types/api'
+import styles from './LandingPage.module.css'
+import clsx from 'clsx'
+
+function formatRelativeTime(timestamp: number): string {
+  const now = Date.now()
+  const diff = now - timestamp * 1000
+  const minutes = Math.floor(diff / 60000)
+  if (minutes < 1) return 'Just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days}d ago`
+  return new Date(timestamp * 1000).toLocaleDateString()
+}
+
+function SkeletonCard({ index }: { index: number }) {
+  return (
+    <motion.div
+      className={styles.skeletonCard}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: index * 0.05 }}
+    >
+      <div className={styles.skeletonImage} />
+      <div className={styles.skeletonContent}>
+        <div className={styles.skeletonTitle} />
+        <div className={styles.skeletonMeta} />
+      </div>
+    </motion.div>
+  )
+}
+
+function EmptyState() {
+  return (
+    <motion.div
+      className={styles.emptyState}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+    >
+      <div className={styles.emptyIcon}>
+        <MessageSquarePlus size={48} strokeWidth={1} />
+      </div>
+      <h3>No recent chats</h3>
+      <p>Start a conversation with a character to begin</p>
+    </motion.div>
+  )
+}
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.04 },
+  },
+  exit: { opacity: 0 },
+}
+
+const cardVariants = {
+  hidden: { opacity: 0, y: 20, scale: 0.95 },
+  visible: { opacity: 1, y: 0, scale: 1 },
+  exit: { opacity: 0, scale: 0.95 },
+}
+
+interface ChatCardProps {
+  chat: RecentChat
+  onClick: () => void
+  onDelete: (chat: RecentChat) => void
+}
+
+function ChatCard({ chat, onClick, onDelete }: ChatCardProps) {
+  const isGroup = chat.metadata?.group === true
+  const groupCharacterIds: string[] = isGroup ? (chat.metadata?.character_ids ?? []) : []
+
+  if (isGroup) {
+    return (
+      <GroupChatCard
+        chat={chat}
+        characterIds={groupCharacterIds}
+        onClick={onClick}
+        onDelete={onDelete}
+      />
+    )
+  }
+
+  const avatarUrl = chat.character_id
+    ? charactersApi.avatarUrl(chat.character_id)
+    : null
+
+  return (
+    <motion.div
+      className={styles.card}
+      variants={cardVariants}
+      whileHover={{ y: -3 }}
+      transition={{ duration: 0.2 }}
+    >
+      <button type="button" className={styles.cardBtn} onClick={onClick}>
+        <div className={styles.cardImage}>
+          <LazyImage
+            src={avatarUrl}
+            alt={chat.character_name}
+            fallback={
+              <div className={styles.cardAvatarFallback}>
+                {chat.character_name?.[0]?.toUpperCase() || '?'}
+              </div>
+            }
+          />
+          <div className={styles.cardImageOverlay} />
+        </div>
+        <div className={styles.cardContent}>
+          <h3 className={styles.cardName}>{chat.character_name}</h3>
+          <span className={styles.cardTime}>{formatRelativeTime(chat.updated_at)}</span>
+        </div>
+      </button>
+      <button
+        type="button"
+        className={styles.deleteBtn}
+        onClick={(e) => {
+          e.stopPropagation()
+          onDelete(chat)
+        }}
+        aria-label="Delete chat"
+      >
+        <Trash2 size={14} />
+      </button>
+    </motion.div>
+  )
+}
+
+interface GroupChatCardProps {
+  chat: RecentChat
+  characterIds: string[]
+  onClick: () => void
+  onDelete: (chat: RecentChat) => void
+}
+
+function GroupChatCard({ chat, characterIds, onClick, onDelete }: GroupChatCardProps) {
+  const displayIds = characterIds.slice(0, 4)
+  const count = characterIds.length
+
+  const mosaicClass =
+    count === 2
+      ? styles.groupMosaic2
+      : count === 3
+        ? styles.groupMosaic3
+        : styles.groupMosaic4
+
+  return (
+    <motion.div
+      className={clsx(styles.card, styles.groupCard)}
+      variants={cardVariants}
+      whileHover={{ y: -3 }}
+      transition={{ duration: 0.2 }}
+    >
+      <button type="button" className={styles.cardBtn} onClick={onClick}>
+        <div className={clsx(styles.cardImage, styles.groupMosaic, mosaicClass)}>
+          {displayIds.map((id) => (
+            <div key={id} className={styles.mosaicCell}>
+              <LazyImage
+                src={charactersApi.avatarUrl(id)}
+                alt=""
+                fallback={
+                  <div className={styles.mosaicFallback}>
+                    <Users size={20} strokeWidth={1.5} />
+                  </div>
+                }
+              />
+            </div>
+          ))}
+        </div>
+        <div className={styles.groupOverlay} />
+        <div className={styles.cardContent}>
+          <h3 className={styles.cardName}>{chat.name || 'Group Chat'}</h3>
+          <div className={styles.groupMeta}>
+            <span className={styles.groupBadge}>
+              <Users size={10} strokeWidth={2} />
+              {count} members
+            </span>
+            <span className={styles.cardTime}>{formatRelativeTime(chat.updated_at)}</span>
+          </div>
+        </div>
+      </button>
+      <button
+        type="button"
+        className={styles.deleteBtn}
+        onClick={(e) => {
+          e.stopPropagation()
+          onDelete(chat)
+        }}
+        aria-label="Delete chat"
+      >
+        <Trash2 size={14} />
+      </button>
+    </motion.div>
+  )
+}
+
+export default function LandingPage() {
+  const navigate = useNavigate()
+  const landingPageChatsDisplayed = useStore((s) => s.landingPageChatsDisplayed)
+
+  const [items, setItems] = useState<RecentChat[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [total, setTotal] = useState(0)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [pendingDeleteItem, setPendingDeleteItem] = useState<RecentChat | null>(null)
+
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  useScrollGate(scrollRef)
+
+  const fetchChats = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const result = await chatsApi.listRecent({ limit: landingPageChatsDisplayed })
+      setItems(result.data)
+      setTotal(result.total)
+    } catch (err: any) {
+      console.error('[Lumiverse] Error fetching chats:', err)
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [landingPageChatsDisplayed])
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || items.length >= total) return
+    setLoadingMore(true)
+    try {
+      const result = await chatsApi.listRecent({
+        limit: landingPageChatsDisplayed,
+        offset: items.length,
+      })
+      setItems((prev) => [...prev, ...result.data])
+      setTotal(result.total)
+    } catch (err: any) {
+      console.error('[Lumiverse] Error loading more chats:', err)
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [loadingMore, items.length, total, landingPageChatsDisplayed])
+
+  useEffect(() => {
+    fetchChats()
+  }, [fetchChats])
+
+  // Infinite scroll: load more when sentinel is visible
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel || items.length >= total || loading) return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) loadMore()
+      },
+      { rootMargin: '200px' }
+    )
+
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [items.length, total, loading, loadMore])
+
+  const handleChatClick = useCallback(
+    (chat: RecentChat) => {
+      navigate(`/chat/${chat.id}`)
+    },
+    [navigate]
+  )
+
+  const handleDeleteChat = useCallback((chat: RecentChat) => {
+    setPendingDeleteItem(chat)
+    setDeleteModalOpen(true)
+  }, [])
+
+  const confirmDelete = useCallback(async () => {
+    if (!pendingDeleteItem) return
+    setDeleteModalOpen(false)
+    const deletedId = pendingDeleteItem.id
+    setPendingDeleteItem(null)
+    try {
+      await chatsApi.delete(deletedId)
+      setItems((prev) => prev.filter((c) => c.id !== deletedId))
+      setTotal((prev) => Math.max(0, prev - 1))
+    } catch (err: any) {
+      console.error('[Lumiverse] Error deleting chat:', err)
+    }
+  }, [pendingDeleteItem])
+
+  const handleNewChat = useCallback(() => {
+    navigate('/characters')
+  }, [navigate])
+
+  const hasMore = items.length < total
+
+  return (
+    <div className={styles.container} ref={scrollRef}>
+      {/* Ambient background */}
+      <div className={styles.bg}>
+        <div className={clsx(styles.bgGlow, styles.bgGlow1)} />
+        <div className={clsx(styles.bgGlow, styles.bgGlow2)} />
+        <div className={clsx(styles.bgGlow, styles.bgGlow3)} />
+      </div>
+
+      {/* Grid pattern */}
+      <div className={styles.grid} />
+
+      {/* Main content */}
+      <motion.div
+        className={styles.content}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5 }}
+      >
+        {/* Header */}
+        <motion.header
+          className={styles.header}
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+        >
+          <div className={styles.headerLeft}>
+            <div className={styles.logo}>
+              <div className={styles.logoIcon}>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="28" height="28">
+                  <g transform="rotate(-12, 32, 32)">
+                    <ellipse cx="32" cy="12" rx="18" ry="6" fill="#8B5A2B" />
+                    <ellipse cx="32" cy="12" rx="14" ry="4" fill="#A0522D" />
+                    <rect x="14" y="12" width="36" height="40" fill="#8B5FC7" />
+                    <line x1="14" y1="18" x2="50" y2="18" stroke="#7A4EB8" strokeWidth="1.5" />
+                    <line x1="14" y1="24" x2="50" y2="24" stroke="#7A4EB8" strokeWidth="1.5" />
+                    <line x1="14" y1="30" x2="50" y2="30" stroke="#7A4EB8" strokeWidth="1.5" />
+                    <line x1="14" y1="36" x2="50" y2="36" stroke="#7A4EB8" strokeWidth="1.5" />
+                    <line x1="14" y1="42" x2="50" y2="42" stroke="#7A4EB8" strokeWidth="1.5" />
+                    <line x1="14" y1="48" x2="50" y2="48" stroke="#7A4EB8" strokeWidth="1.5" />
+                    <rect x="14" y="12" width="8" height="40" fill="#A78BD4" opacity="0.5" />
+                    <ellipse cx="32" cy="52" rx="18" ry="6" fill="#8B5A2B" />
+                    <rect x="14" y="48" width="36" height="4" fill="#8B5FC7" />
+                    <ellipse cx="32" cy="52" rx="14" ry="4" fill="#A0522D" />
+                    <ellipse cx="32" cy="52" rx="5" ry="2" fill="#5D3A1A" />
+                    <path d="M 48 35 Q 55 38 52 45 Q 49 52 56 58" fill="none" stroke="#8B5FC7" strokeWidth="2" strokeLinecap="round" />
+                  </g>
+                </svg>
+              </div>
+              <div className={styles.logoText}>
+                <h1>Lumiverse</h1>
+                <span>Continue your story</span>
+              </div>
+            </div>
+          </div>
+
+          <div className={styles.headerRight}>
+            <motion.button
+              className={styles.headerBtn}
+              onClick={handleNewChat}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              type="button"
+              title="New chat"
+            >
+              <MessageSquarePlus size={16} strokeWidth={1.5} />
+            </motion.button>
+            <motion.button
+              className={styles.headerBtn}
+              onClick={fetchChats}
+              disabled={loading}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              type="button"
+            >
+              <RefreshCw size={16} strokeWidth={1.5} className={loading ? styles.spin : ''} />
+            </motion.button>
+          </div>
+        </motion.header>
+
+        {/* Main grid */}
+        <main className={styles.main}>
+          <AnimatePresence mode="wait">
+            {loading && items.length === 0 ? (
+              <motion.div key="loading" className={styles.gridCards} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <SkeletonCard key={i} index={i} />
+                ))}
+              </motion.div>
+            ) : error && items.length === 0 ? (
+              <motion.div key="error" className={styles.errorState} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+                <p>Failed to load chats</p>
+                <button onClick={fetchChats} className={styles.primaryBtn} type="button">Try Again</button>
+              </motion.div>
+            ) : items.length === 0 ? (
+              <EmptyState key="empty" />
+            ) : (
+              <motion.div key="chats" className={styles.gridCards} variants={containerVariants} initial="hidden" animate="visible" exit="exit">
+                {items.map((chat) => (
+                  <ChatCard
+                    key={chat.id}
+                    chat={chat}
+                    onClick={() => handleChatClick(chat)}
+                    onDelete={handleDeleteChat}
+                  />
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Infinite scroll sentinel */}
+          {hasMore && (
+            <div ref={sentinelRef} className={styles.loadMoreSentinel}>
+              {loadingMore && (
+                <div className={styles.loadingMore}>
+                  <Loader2 size={16} className={styles.spin} />
+                  <span>Loading more chats...</span>
+                </div>
+              )}
+            </div>
+          )}
+        </main>
+
+        {/* Footer */}
+        <motion.footer
+          className={styles.footer}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.6 }}
+        >
+          <p>Select a character to continue your journey</p>
+        </motion.footer>
+      </motion.div>
+
+      <ConfirmationModal
+        isOpen={deleteModalOpen}
+        onConfirm={confirmDelete}
+        onCancel={() => { setDeleteModalOpen(false); setPendingDeleteItem(null) }}
+        title="Delete Chat"
+        message={
+          pendingDeleteItem ? (
+            <>Are you sure you want to delete the chat with <strong>"{pendingDeleteItem.character_name}"</strong>?</>
+          ) : 'Are you sure?'
+        }
+        variant="danger"
+        confirmText="Delete"
+      />
+    </div>
+  )
+}

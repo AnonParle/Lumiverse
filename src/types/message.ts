@@ -1,0 +1,30 @@
+export interface Message {
+  id: string;
+  chat_id: string;
+  index_in_chat: number;
+  is_user: boolean;
+  name: string;
+  content: string;
+  send_date: number;
+  swipe_id: number;
+  swipes: string[];
+  extra: Record<string, any>;
+  parent_message_id: string | null;
+  branch_id: string | null;
+  created_at: number;
+}
+
+export interface CreateMessageInput {
+  is_user: boolean;
+  name: string;
+  content: string;
+  extra?: Record<string, any>;
+  parent_message_id?: string;
+  branch_id?: string;
+}
+
+export interface UpdateMessageInput {
+  content?: string;
+  name?: string;
+  extra?: Record<string, any>;
+}

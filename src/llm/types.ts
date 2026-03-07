@@ -1,0 +1,108 @@
+export interface LlmMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+  name?: string;
+}
+
+export interface GenerationRequest {
+  messages: LlmMessage[];
+  model: string;
+  parameters?: GenerationParameters;
+  stream?: boolean;
+  /** Optional tool/function definitions for inline function calling. */
+  tools?: ToolDefinition[];
+}
+
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>; // JSON Schema
+}
+
+export interface GenerationParameters {
+  temperature?: number;
+  max_tokens?: number;
+  top_p?: number;
+  top_k?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  stop?: string[];
+  [key: string]: any;
+}
+
+export interface GenerationResponse {
+  content: string;
+  finish_reason: string;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
+
+export interface StreamChunk {
+  token: string;
+  finish_reason?: string;
+}
+
+// --- Prompt Assembly Types ---
+
+export type GenerationType = 'normal' | 'continue' | 'regenerate' | 'swipe' | 'impersonate' | 'quiet';
+
+export interface AssemblyContext {
+  userId: string;
+  chatId: string;
+  connectionId?: string;
+  presetId?: string;
+  generationType: GenerationType;
+  personaId?: string;
+  /** For regenerate: exclude this message from chat history (it has a blank swipe). */
+  excludeMessageId?: string;
+  /** For group chats: generate a response as this specific character. */
+  targetCharacterId?: string;
+  /** Council tool results (passed from generate.service when council executes before assembly). */
+  councilToolResults?: CouncilToolResultSummary[];
+  /** Named council tool results (variable_name → content). */
+  councilNamedResults?: Record<string, string>;
+}
+
+/** Lightweight summary of a council tool result for macro access (avoids importing spindle-types). */
+export interface CouncilToolResultSummary {
+  memberId: string;
+  memberName: string;
+  toolName: string;
+  toolDisplayName: string;
+  success: boolean;
+  content: string;
+  error?: string;
+}
+
+export interface ActivatedWorldInfoEntry {
+  id: string;
+  comment: string;
+  keys: string[];
+  source: 'keyword' | 'vector';
+  score?: number;
+}
+
+export interface AssemblyResult {
+  messages: LlmMessage[];
+  breakdown: AssemblyBreakdownEntry[];
+  parameters: Record<string, any>;
+  /** Summary of all world info entries activated during this assembly. */
+  activatedWorldInfo?: ActivatedWorldInfoEntry[];
+  /** Deferred WI state to persist after generation completes. */
+  deferredWiState?: { chatId: string; metadata: Record<string, any> };
+  /** True if the {{lumiaCouncilDeliberation}} macro was resolved during assembly. */
+  deliberationHandledByMacro?: boolean;
+}
+
+export interface AssemblyBreakdownEntry {
+  type: 'block' | 'chat_history' | 'separator' | 'utility' | 'world_info' | 'authors_note' | 'append';
+  name: string;
+  role?: string;
+  content?: string;
+  blockId?: string;
+  marker?: string;
+  messageCount?: number;
+}
