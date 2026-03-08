@@ -13,6 +13,8 @@ const DATA_KEYS: ReadonlySet<string> = new Set([
   'chatSheldEnterToSend',
   'chatWidthMode',
   'chatContentMaxWidth',
+  'modalWidthMode',
+  'modalMaxWidth',
   'portraitPanelSide',
   'theme',
   'drawerSettings',
@@ -135,6 +137,8 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set, get) => ({
   chatSheldEnterToSend: true,
   chatWidthMode: 'full',
   chatContentMaxWidth: 900,
+  modalWidthMode: 'full',
+  modalMaxWidth: 900,
   portraitPanelSide: 'right',
   theme: null,
   drawerSettings: {

@@ -196,6 +196,8 @@ export interface SettingsSlice {
   chatSheldEnterToSend: boolean
   chatWidthMode: 'full' | 'comfortable' | 'compact' | 'custom'
   chatContentMaxWidth: number
+  modalWidthMode: 'full' | 'comfortable' | 'compact' | 'custom'
+  modalMaxWidth: number
   portraitPanelSide: 'left' | 'right'
   theme: ThemeConfig | null
   drawerSettings: DrawerSettings

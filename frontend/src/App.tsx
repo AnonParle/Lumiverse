@@ -26,12 +26,12 @@ export default function App() {
     }
   }, [isAuthenticated, loadSettings])
 
-  // Apply content-width mode as a root CSS variable so modals can reference it
-  const chatWidthMode = useStore((s) => s.chatWidthMode)
-  const chatContentMaxWidth = useStore((s) => s.chatContentMaxWidth)
+  // Apply modal-width mode as a root CSS variable so all modals can reference it
+  const modalWidthMode = useStore((s) => s.modalWidthMode)
+  const modalMaxWidth = useStore((s) => s.modalMaxWidth)
   useEffect(() => {
     const root = document.documentElement
-    switch (chatWidthMode) {
+    switch (modalWidthMode) {
       case 'comfortable':
         root.style.setProperty('--lumiverse-content-max-width', '1000px')
         break
@@ -39,12 +39,12 @@ export default function App() {
         root.style.setProperty('--lumiverse-content-max-width', '760px')
         break
       case 'custom':
-        root.style.setProperty('--lumiverse-content-max-width', `${chatContentMaxWidth}px`)
+        root.style.setProperty('--lumiverse-content-max-width', `${modalMaxWidth}px`)
         break
       default:
         root.style.removeProperty('--lumiverse-content-max-width')
     }
-  }, [chatWidthMode, chatContentMaxWidth])
+  }, [modalWidthMode, modalMaxWidth])
 
   return (
     <AuthGuard>
