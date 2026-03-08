@@ -158,6 +158,7 @@ function GeneralSettings() {
 
 function DisplaySettings() {
   const drawerSettings = useStore((s) => s.drawerSettings)
+  const chatContentMaxWidth = useStore((s) => s.chatContentMaxWidth)
   const landingPageChatsDisplayed = useStore((s) => s.landingPageChatsDisplayed)
   const charactersPerPage = useStore((s) => s.charactersPerPage)
   const personasPerPage = useStore((s) => s.personasPerPage)
@@ -167,9 +168,65 @@ function DisplaySettings() {
     setSetting('drawerSettings', { ...drawerSettings, ...patch })
   }
 
+  const widthPreset = chatContentMaxWidth === 0
+    ? 'full'
+    : chatContentMaxWidth === 1000
+      ? 'comfortable'
+      : chatContentMaxWidth === 760
+        ? 'compact'
+        : 'custom'
+
+  const setWidthPreset = (preset: string) => {
+    switch (preset) {
+      case 'full': return setSetting('chatContentMaxWidth', 0)
+      case 'comfortable': return setSetting('chatContentMaxWidth', 1000)
+      case 'compact': return setSetting('chatContentMaxWidth', 760)
+      case 'custom': return setSetting('chatContentMaxWidth', chatContentMaxWidth || 900)
+    }
+  }
+
   return (
     <div className={styles.settingsSection}>
-      <h3 className={styles.sectionTitle}>Drawer</h3>
+      <h3 className={styles.sectionTitle}>Chat Width</h3>
+      <p className={styles.helperText}>
+        Constrain the chat message area width. Useful for ultrawide monitors where full-width messages stretch too far.
+      </p>
+
+      <div className={styles.field}>
+        <label className={styles.fieldLabel}>CONTENT WIDTH</label>
+        <div className={styles.segmented}>
+          {(['full', 'comfortable', 'compact', 'custom'] as const).map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              className={clsx(styles.segmentedBtn, widthPreset === preset && styles.segmentedBtnActive)}
+              onClick={() => setWidthPreset(preset)}
+            >
+              {preset === 'full' ? 'Full' : preset === 'comfortable' ? 'Comfortable' : preset === 'compact' ? 'Compact' : 'Custom'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {widthPreset === 'custom' && (
+        <div className={styles.field}>
+          <label className={styles.fieldLabel}>MAX WIDTH (px)</label>
+          <div className={styles.rangeRow}>
+            <input
+              type="range"
+              className={styles.rangeSlider}
+              min={500}
+              max={2000}
+              step={10}
+              value={chatContentMaxWidth || 900}
+              onChange={(e) => setSetting('chatContentMaxWidth', parseInt(e.target.value, 10))}
+            />
+            <span className={styles.rangeValue}>{chatContentMaxWidth || 900}px</span>
+          </div>
+        </div>
+      )}
+
+      <h3 className={styles.sectionTitle} style={{ marginTop: 12 }}>Drawer</h3>
 
       <div className={styles.drawerRow}>
         <div className={styles.field}>

@@ -63,6 +63,17 @@
   min-height: 0;
   height: 100%;
   position: relative;
+  align-items: center;
+}
+
+.chatColumnInner {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: var(--lumiverse-chat-content-width, none);
+  min-height: 0;
+  height: 100%;
+  position: relative;
 }
 
 /* GPU optimization: disable backdrop-filter on all cards during streaming */

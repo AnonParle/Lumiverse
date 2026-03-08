@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useParams } from 'react-router'
 import { AnimatePresence } from 'motion/react'
 import { UserRound } from 'lucide-react'
@@ -25,6 +25,12 @@ export default function ChatView() {
   const portraitPanelSide = useStore((s) => s.portraitPanelSide)
   const sceneBackground = useStore((s) => s.sceneBackground)
   const imageGeneration = useStore((s) => s.imageGeneration)
+  const chatContentMaxWidth = useStore((s) => s.chatContentMaxWidth)
+
+  const innerStyle = useMemo(() => {
+    if (!chatContentMaxWidth) return undefined
+    return { '--lumiverse-chat-content-width': `${chatContentMaxWidth}px` } as React.CSSProperties
+  }, [chatContentMaxWidth])
 
   // Load chat and messages
   useEffect(() => {
@@ -146,10 +152,12 @@ export default function ChatView() {
         )}
 
         <div className={styles.chatColumn}>
-          <MessageList messages={messages} chatId={chatId} isStreaming={isStreaming} />
-          <ScrollToBottom />
-          <CouncilPill />
-          <InputArea chatId={chatId} />
+          <div className={styles.chatColumnInner} style={innerStyle}>
+            <MessageList messages={messages} chatId={chatId} isStreaming={isStreaming} />
+            <ScrollToBottom />
+            <CouncilPill />
+            <InputArea chatId={chatId} />
+          </div>
         </div>
 
         {portraitPanelSide === 'right' && (

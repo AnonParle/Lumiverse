@@ -9,8 +9,8 @@
 }
 
 .modal {
-  width: min(980px, 94vw);
-  height: min(760px, 88vh);
+  width: clamp(340px, 94vw, 1200px);
+  height: clamp(400px, 88vh, 860px);
   background: var(--lumiverse-bg);
   border: 1px solid var(--lumiverse-border);
   border-radius: 16px;
